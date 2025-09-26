@@ -1,8 +1,10 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 
+// ... (garde tous tes interfaces existants)
 interface QuickStat {
   icon: string
   label: string
@@ -32,11 +34,52 @@ interface SuggestedProfile {
 }
 
 export default function HomePage() {
+  const router = useRouter()
+  const [isLoading, setIsLoading] = useState(true)
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  
+  // Tes states existants
   const [currentTime, setCurrentTime] = useState('')
   const [userName] = useState('Alex')
   const [selectedProfile, setSelectedProfile] = useState<SuggestedProfile | null>(null)
 
-  // Stats rapides
+  // NOUVELLE LOGIQUE : Vérification d'authentification
+  useEffect(() => {
+    const checkAuth = () => {
+      const token = localStorage.getItem('token')
+      
+      if (!token) {
+        // Pas connecté = rediriger vers inscription
+        router.push('/auth')
+        return
+      }
+      
+      // Connecté = afficher la page
+      setIsAuthenticated(true)
+      setIsLoading(false)
+    }
+
+    checkAuth()
+  }, [router])
+
+  // Ton useEffect existant pour l'heure
+  useEffect(() => {
+    const updateTime = () => {
+      const now = new Date()
+      const hours = now.getHours()
+      let greeting = 'Bonsoir'
+      if (hours < 12) greeting = 'Bonjour'
+      else if (hours < 18) greeting = 'Bon après-midi'
+      
+      setCurrentTime(greeting)
+    }
+    
+    updateTime()
+    const interval = setInterval(updateTime, 60000)
+    return () => clearInterval(interval)
+  }, [])
+
+  // Tes données existantes
   const quickStats: QuickStat[] = [
     { icon: '👀', label: 'Vues aujourd\'hui', value: '12', color: 'blue' },
     { icon: '💖', label: 'Likes reçus', value: '8', color: 'pink' },
@@ -44,7 +87,7 @@ export default function HomePage() {
     { icon: '💬', label: 'Messages', value: '5', color: 'purple' }
   ]
 
-  // Profils suggérés
+  // Tes profils existants
   const suggestedProfiles: SuggestedProfile[] = [
     {
       id: '1',
@@ -81,7 +124,7 @@ export default function HomePage() {
     }
   ]
 
-  // Activité récente
+  // Ton activité existante
   const recentActivity: RecentActivity[] = [
     {
       id: '1',
@@ -117,22 +160,7 @@ export default function HomePage() {
     }
   ]
 
-  useEffect(() => {
-    const updateTime = () => {
-      const now = new Date()
-      const hours = now.getHours()
-      let greeting = 'Bonsoir'
-      if (hours < 12) greeting = 'Bonjour'
-      else if (hours < 18) greeting = 'Bon après-midi'
-      
-      setCurrentTime(greeting)
-    }
-    
-    updateTime()
-    const interval = setInterval(updateTime, 60000)
-    return () => clearInterval(interval)
-  }, [])
-
+  // Tes fonctions existantes
   const getActivityIcon = (type: string) => {
     switch (type) {
       case 'match': return '💖'
@@ -161,6 +189,24 @@ export default function HomePage() {
     setSelectedProfile(null)
   }
 
+  // NOUVEAU : Écran de chargement pendant la vérification
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-pink-50 to-purple-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-pink-200 border-t-pink-500 rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600">Chargement...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // NOUVEAU : Si pas authentifié, ne rien afficher (redirection en cours)
+  if (!isAuthenticated) {
+    return null
+  }
+
+  // TON CODE EXISTANT - exactement pareil
   return (
     <div className="min-h-screen bg-gradient-to-br from-pink-50 to-purple-50">
       <div className="max-w-6xl mx-auto p-4">

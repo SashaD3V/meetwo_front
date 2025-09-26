@@ -55,8 +55,8 @@ export default function LoginPage() {
       localStorage.setItem('token', token);
       localStorage.setItem('user', JSON.stringify(user));
       
-      // Rediriger vers le dashboard (pour l'instant juste un alert)
-      alert('Connexion réussie ! Token reçu');
+      // Rediriger vers l'acceuil 
+      router.push('/');
       
     } catch (error: any) {
       console.error('Erreur de connexion:', error);
