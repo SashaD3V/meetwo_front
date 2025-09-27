@@ -17,7 +17,7 @@ interface UserProfile {
   city?: string
   bio?: string
   biography?: string
-  images: string[]
+  images: { id: number; url: string; position?: number }[] // Ajout de la position
   interests: string[]
   job?: string
   education?: string
@@ -44,6 +44,8 @@ export default function EditProfilePage() {
   })
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
+  const [isUploading, setIsUploading] = useState(false)
+  const [deletingPhotoId, setDeletingPhotoId] = useState<number | null>(null)
   const [activeTab, setActiveTab] = useState<'basic' | 'interests' | 'details' | 'photos'>('basic')
 
   // Charger les données utilisateur au démarrage
@@ -73,17 +75,22 @@ export default function EditProfilePage() {
           city: userData.city,
           bio: userData.biography || '',
           biography: userData.biography,
-          images: [], // Pour l'instant vide, tu pourras ajouter les photos plus tard
+          images: [],
           interests: userData.interests || [],
-          job: 'Non renseigné', // Champs pas encore dans ton backend
+          job: 'Non renseigné',
           education: 'Non renseigné',
           height: 'Non renseigné',
           gender: userData.gender,
           seekingRelationshipType: userData.seekingRelationshipType,
           lookingFor: userData.seekingRelationshipType === 'RELATION_SERIEUSE' ? 'Relation sérieuse' : 'Relation décontractée',
-          smoking: false, // Valeurs par défaut pour les nouveaux champs
+          smoking: false,
           drinking: 'socially'
         })
+        
+        // Charger les photos
+        if (userData.id) {
+          await loadUserPhotos(userData.id)
+        }
         
       } catch (error) {
         console.error('Erreur lors du chargement du profil:', error)
@@ -95,6 +102,182 @@ export default function EditProfilePage() {
 
     loadUserProfile()
   }, [router])
+
+  // Charger les photos de l'utilisateur
+  const loadUserPhotos = async (userId: number) => {
+    try {
+      const response = await api.get(`/photos/user/${userId}`)
+      console.log('Réponse complète API photos:', response.data)
+      
+      // Transformer les données pour inclure l'ID et l'URL
+      // ET TRIER PAR POSITION pour avoir l'ordre correct
+      const photosWithIds = response.data
+        .map((photo: any) => ({
+          id: photo.id,
+          url: photo.url,
+          position: photo.position || 0
+        }))
+        .sort((a: any, b: any) => a.position - b.position) // Tri par position
+      
+      console.log('Photos triées par position:', photosWithIds)
+      
+      setProfile(prev => ({
+        ...prev,
+        images: photosWithIds
+      }))
+      
+    } catch (error) {
+      console.error('Erreur lors du chargement des photos:', error)
+    }
+  }
+
+  // Upload de photo
+
+// Remplacez votre fonction handleFileUpload par celle-ci
+const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const file = event.target.files?.[0]
+  if (!file) return
+
+  console.log('=== DÉBUT UPLOAD CORRIGÉ ===')
+  
+  // Validations côté client
+  if (!file.type.startsWith('image/')) {
+    alert('Veuillez sélectionner un fichier image')
+    return
+  }
+
+  if (file.size > 10 * 1024 * 1024) { // 10MB
+    alert('Le fichier est trop volumineux (maximum 10MB)')
+    return
+  }
+
+  if (profile.images.length >= 6) {
+    alert('Vous ne pouvez pas avoir plus de 6 photos')
+    return
+  }
+
+  if (!profile.id) {
+    alert('Erreur: ID utilisateur manquant')
+    return
+  }
+
+  try {
+    setIsUploading(true)
+    
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('userId', profile.id.toString())
+    const nextPosition = Math.max(...profile.images.map(img => img.position || 0), 0) + 1
+formData.append('position', nextPosition.toString())
+
+console.log('=== CALCUL POSITION CORRIGÉ ===')
+console.log('Photos actuelles:', profile.images.map(img => ({ id: img.id, position: img.position })))
+console.log('Prochaine position calculée:', nextPosition)
+    formData.append('estPrincipale', (profile.images.length === 0).toString())
+    formData.append('altText', `Photo de ${profile.firstName || 'utilisateur'}`)
+
+    console.log('=== DONNÉES ENVOYÉES ===')
+    console.log('userId:', profile.id)
+    console.log('position:', profile.images.length + 1)
+    console.log('estPrincipale:', profile.images.length === 0)
+    console.log('file name:', file.name)
+    console.log('file size:', file.size)
+
+    // CORRECTION CRITIQUE: Supprimer le Content-Type pour FormData
+    const response = await api.post('/photos', formData, {
+      headers: {
+        'Content-Type': undefined, // Laisser le navigateur gérer
+      },
+      timeout: 60000, // 1 minute pour les gros fichiers
+    })
+
+    console.log('=== SUCCÈS ===')
+    console.log('Status:', response.status)
+    console.log('Response:', response.data)
+
+    // Recharger les photos après upload
+    if (profile.id) {
+      await loadUserPhotos(profile.id)
+    }
+    
+    alert('Photo ajoutée avec succès !')
+
+  } catch (error: any) {
+    console.error('=== ERREUR COMPLÈTE ===')
+    
+    if (error.response) {
+      console.error('Status:', error.response.status)
+      console.error('Data:', error.response.data)
+      console.error('URL complète:', error.config?.baseURL + error.config?.url)
+      
+      let errorMessage = 'Erreur lors de l\'upload de la photo'
+      
+      if (error.response.status === 404) {
+        errorMessage = 'Endpoint non trouvé. Vérifiez que le serveur est démarré.'
+      } else if (error.response.status === 400) {
+        errorMessage = `Erreur de validation: ${error.response.data.message || 'Données invalides'}`
+      } else if (error.response.status === 413) {
+        errorMessage = 'Fichier trop volumineux'
+      } else if (error.response.status === 500) {
+        errorMessage = 'Erreur serveur interne'
+      }
+      
+      alert(errorMessage)
+      
+    } else if (error.request) {
+      console.error('Pas de réponse du serveur')
+      alert('Impossible de contacter le serveur. Vérifiez que votre backend est démarré.')
+    } else {
+      console.error('Message:', error.message)
+      alert(`Erreur: ${error.message}`)
+    }
+    
+  } finally {
+    setIsUploading(false)
+    event.target.value = ''
+    console.log('=== FIN UPLOAD ===')
+  }
+}
+
+  // Supprimer une photo
+  const handleDeletePhoto = async (photoId: number) => {
+    if (!confirm('Êtes-vous sûr de vouloir supprimer cette photo ?')) {
+      return
+    }
+
+    try {
+      setDeletingPhotoId(photoId)
+      
+      await api.delete(`/photos/${photoId}`)
+      
+      // Recharger les photos après suppression
+      await loadUserPhotos(profile.id!)
+      
+      alert('Photo supprimée avec succès !')
+      
+    } catch (error: any) {
+      console.error('Erreur lors de la suppression:', error)
+      alert('Erreur lors de la suppression de la photo')
+    } finally {
+      setDeletingPhotoId(null)
+    }
+  }
+
+  // Définir comme photo principale
+  const handleSetMainPhoto = async (photoId: number) => {
+    try {
+      await api.put(`/photos/${photoId}/set-main`)
+      
+      // Recharger les photos pour refléter le changement
+      await loadUserPhotos(profile.id!)
+      
+      alert('Photo définie comme principale !')
+      
+    } catch (error: any) {
+      console.error('Erreur lors de la définition de la photo principale:', error)
+      alert('Erreur lors de la définition de la photo principale')
+    }
+  }
 
   const handleSave = async () => {
     setIsSaving(true)
@@ -140,22 +323,6 @@ export default function EditProfilePage() {
       interests: prev.interests.includes(interest)
         ? prev.interests.filter(i => i !== interest)
         : [...prev.interests, interest]
-    }))
-  }
-
-  const addPhoto = () => {
-    // Simuler l'ajout d'une photo
-    const newPhoto = `/images/user-${profile.images.length + 1}.jpg`
-    setProfile(prev => ({
-      ...prev,
-      images: [...prev.images, newPhoto]
-    }))
-  }
-
-  const removePhoto = (index: number) => {
-    setProfile(prev => ({
-      ...prev,
-      images: prev.images.filter((_, i) => i !== index)
     }))
   }
 
@@ -230,7 +397,7 @@ export default function EditProfilePage() {
                 : 'text-gray-600 hover:bg-gray-100'
             }`}
           >
-            📸 Photos
+            📸 Photos ({profile.images.length}/6)
           </button>
           <button
             onClick={() => setActiveTab('interests')}
@@ -365,33 +532,98 @@ export default function EditProfilePage() {
                 Mes photos ({profile.images.length}/6)
               </h3>
               <p className="text-gray-600 text-sm mb-6">
-                Fonctionnalité photos en cours de développement
+                Ajoutez vos plus belles photos ! La première sera votre photo principale.
               </p>
               
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
                 {profile.images.map((image, index) => (
-                  <div key={index} className="relative group">
-                    <div className="aspect-square bg-gradient-to-br from-pink-300 to-purple-400 rounded-xl flex items-center justify-center text-4xl">
-                      📷
+                  <div key={image.id} className="relative group">
+                    <img 
+                      src={image.url} 
+                      alt={`Photo ${index + 1}`}
+                      className="aspect-square object-cover rounded-xl w-full"
+                      onError={(e) => {
+                        e.currentTarget.src = '/api/placeholder/150/150'
+                      }}
+                    />
+                    
+                    {/* Badge photo principale */}
+                    {index === 0 && (
+                      <div className="absolute top-2 left-2 bg-pink-500 text-white text-xs px-2 py-1 rounded-full">
+                        Principale
+                      </div>
+                    )}
+                    
+                    {/* Actions sur hover */}
+                    <div className="absolute inset-0 bg-black bg-opacity-50 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl flex items-center justify-center gap-2">
+                      
+                      {/* Bouton définir comme principale (si ce n'est pas déjà la principale) */}
+                      {index !== 0 && (
+                        <button
+                          onClick={() => handleSetMainPhoto(image.id)}
+                          className="bg-blue-500 hover:bg-blue-600 text-white p-2 rounded-full transition-colors"
+                          title="Définir comme photo principale"
+                        >
+                          <span className="text-sm">★</span>
+                        </button>
+                      )}
+                      
+                      {/* Bouton supprimer */}
+                      <button
+                        onClick={() => handleDeletePhoto(image.id)}
+                        disabled={deletingPhotoId === image.id}
+                        className={`text-white p-2 rounded-full transition-colors ${
+                          deletingPhotoId === image.id
+                            ? 'bg-gray-500 cursor-not-allowed'
+                            : 'bg-red-500 hover:bg-red-600'
+                        }`}
+                        title="Supprimer cette photo"
+                      >
+                        {deletingPhotoId === image.id ? (
+                          <span className="text-sm animate-spin">⏳</span>
+                        ) : (
+                          <span className="text-sm">🗑️</span>
+                        )}
+                      </button>
                     </div>
-                    <button
-                      onClick={() => removePhoto(index)}
-                      className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full text-xs hover:bg-red-600 transition-colors opacity-0 group-hover:opacity-100"
-                    >
-                      ✕
-                    </button>
                   </div>
                 ))}
                 
+                {/* Bouton d'ajout de photo */}
                 {profile.images.length < 6 && (
-                  <button
-                    onClick={addPhoto}
-                    className="aspect-square border-2 border-dashed border-pink-300 rounded-xl flex flex-col items-center justify-center text-pink-500 hover:border-pink-500 hover:text-pink-600 transition-colors"
-                  >
-                    <span className="text-3xl mb-1">+</span>
-                    <span className="text-xs">Ajouter</span>
-                  </button>
+                  <div className="aspect-square border-2 border-dashed border-pink-300 rounded-xl flex flex-col items-center justify-center text-pink-500 hover:border-pink-500 hover:text-pink-600 transition-colors relative">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleFileUpload}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                      disabled={isUploading}
+                    />
+                    {isUploading ? (
+                      <>
+                        <div className="w-6 h-6 border-2 border-pink-300 border-t-pink-500 rounded-full animate-spin mb-1"></div>
+                        <span className="text-xs">Upload...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-3xl mb-1">+</span>
+                        <span className="text-xs">Ajouter</span>
+                      </>
+                    )}
+                  </div>
                 )}
+              </div>
+
+              <div className="p-4 bg-pink-50 rounded-xl">
+                <h4 className="font-medium text-pink-800 mb-2">💡 Conseils photos</h4>
+                <ul className="text-sm text-pink-700 space-y-1">
+                  <li>• Souriez naturellement</li>
+                  <li>• Variez les environnements</li>
+                  <li>• Évitez les photos de groupe</li>
+                  <li>• Montrez vos passions</li>
+                  <li>• Survolez une photo pour la modifier ou la supprimer</li>
+                  <li>• Maximum 10MB par photo</li>
+                </ul>
               </div>
             </div>
           )}
