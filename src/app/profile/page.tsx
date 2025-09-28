@@ -3,6 +3,7 @@
 import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useUserProfile } from '../hooks/useUserProfile'
+import PhotoGrid from '../components/PhotoGrid'
 
 const availableInterests = [
   'SPORT', 'MUSIQUE', 'CINEMA', 'VOYAGE', 'CUISINE', 'LECTURE', 'ART', 
@@ -26,6 +27,7 @@ export default function EditProfilePage() {
     saveProfile,
     uploadPhoto,
     deletePhoto,
+    reorderPhotos,
     canAddPhoto
   } = useUserProfile()
 
@@ -87,17 +89,16 @@ export default function EditProfilePage() {
     }
   }
 
-  // 🗑️ [EditProfile] Suppression de photo
+  // 🗑️ [EditProfile] Suppression de photo (maintenant gérée par PhotoGrid)
   const handleDeletePhoto = async (photoId: number) => {
-    if (!confirm('Êtes-vous sûr de vouloir supprimer cette photo ?')) return
-
     try {
-      console.log('🗑️ [EditProfile] Suppression photo:', photoId)
+      console.log('🗑️ [EditProfile] Suppression photo via PhotoGrid:', photoId)
       await deletePhoto(photoId)
       console.log('✅ [EditProfile] Photo supprimée avec succès')
     } catch (error) {
       console.error('❌ [EditProfile] Erreur suppression:', error)
-      alert('Erreur lors de la suppression de la photo')
+      // L'erreur est déjà gérée dans le PhotoGrid
+      throw error
     }
   }
 
@@ -341,13 +342,6 @@ export default function EditProfilePage() {
           {/* Photos */}
           {activeTab === 'photos' && (
             <div className="bg-white rounded-2xl p-6 shadow-sm">
-              <h3 className="text-lg font-semibold text-gray-800 mb-4">
-                Mes photos ({photos.length}/6)
-              </h3>
-              <p className="text-gray-600 text-sm mb-6">
-                Ajoutez jusqu'à 6 photos. La première sera votre photo principale.
-              </p>
-              
               {/* Affichage erreur upload */}
               {uploadError && (
                 <div className="mb-4 p-3 bg-red-100 border border-red-300 rounded-lg text-red-700 text-sm">
@@ -355,52 +349,15 @@ export default function EditProfilePage() {
                 </div>
               )}
               
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                {/* Photos existantes */}
-                {photos.map((photo, index) => (
-                  <div key={photo.id} className="relative group">
-                    <div className="aspect-square rounded-xl overflow-hidden bg-gray-100">
-                      <img
-                        src={photo.url}
-                        alt={photo.altText || `Photo ${index + 1}`}
-                        className="w-full h-full object-cover"
-                        onError={(e) => {
-                          console.log('❌ [EditProfile] Erreur chargement image:', photo.url)
-                          e.currentTarget.src = '/images/placeholder.jpg'
-                        }}
-                      />
-                    </div>
-                    
-                    {/* Badge photo principale */}
-                    {photo.estPrincipale && (
-                      <div className="absolute top-2 left-2 bg-pink-500 text-white text-xs px-2 py-1 rounded-full">
-                        ⭐ Principale
-                      </div>
-                    )}
-                    
-                    {/* Bouton suppression */}
-                    <button
-                      onClick={() => handleDeletePhoto(photo.id)}
-                      disabled={isSaving}
-                      className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full text-xs hover:bg-red-600 transition-colors opacity-0 group-hover:opacity-100 disabled:opacity-50"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                ))}
-                
-                {/* Bouton ajouter photo */}
-                {canAddPhoto() && (
-                  <button
-                    onClick={triggerFileSelect}
-                    disabled={isSaving}
-                    className="aspect-square border-2 border-dashed border-pink-300 rounded-xl flex flex-col items-center justify-center text-pink-500 hover:border-pink-500 hover:text-pink-600 transition-colors disabled:opacity-50"
-                  >
-                    <span className="text-3xl mb-1">+</span>
-                    <span className="text-xs">Ajouter</span>
-                  </button>
-                )}
-              </div>
+              {/* Composant PhotoGrid avec drag & drop */}
+              <PhotoGrid
+                photos={photos}
+                onReorder={reorderPhotos}
+                onDelete={deletePhoto}
+                onUpload={triggerFileSelect}
+                canAddPhoto={canAddPhoto()}
+                isLoading={isSaving}
+              />
 
               {/* Input file caché */}
               <input
@@ -410,13 +367,6 @@ export default function EditProfilePage() {
                 onChange={handlePhotoUpload}
                 className="hidden"
               />
-
-              {/* Info limite */}
-              {!canAddPhoto() && (
-                <p className="text-amber-600 text-sm mt-4 text-center">
-                  ⚠️ Limite de 6 photos atteinte
-                </p>
-              )}
             </div>
           )}
 

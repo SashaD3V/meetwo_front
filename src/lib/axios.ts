@@ -1,42 +1,34 @@
-// lib/axios.ts
-import axios from 'axios';
+import axios from 'axios'
 
 const api = axios.create({
-  baseURL: 'http://localhost:8080/api',
-  timeout: 10000,
+  baseURL: 'http://localhost:8080/api', // CORRECTION: ajouter /api
   headers: {
     'Content-Type': 'application/json',
   },
-});
+  timeout: 60000, // 1 minute pour les uploads
+})
 
-// Intercepteur pour ajouter automatiquement le token JWT
-api.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => {
-    return Promise.reject(error);
+// Interceptor pour ajouter le token d'auth si vous en avez un
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('token')
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
   }
-);
+  return config
+})
 
-// Intercepteur pour gérer les réponses et les erreurs
+// Interceptor pour logger les erreurs
 api.interceptors.response.use(
-  (response) => {
-    return response;
-  },
+  (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
-      // Token expiré ou invalide, nettoyer le localStorage
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      window.location.href = '/auth/login';
-    }
-    return Promise.reject(error);
+    console.error('API Error:', {
+      url: error.config?.url,
+      method: error.config?.method,
+      status: error.response?.status,
+      data: error.response?.data
+    })
+    return Promise.reject(error)
   }
-);
+)
 
-export default api;
+export default api
