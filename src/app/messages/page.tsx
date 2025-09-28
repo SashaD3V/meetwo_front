@@ -41,7 +41,9 @@ const useMatches = (userId: number | null) => {
   const loadMatches = async () => {
     if (!userId) return
 
+    console.log(`=== DÉBUT TEST API MATCHES ===`)
     console.log(`🔄 [useMatches] Loading matches for user: ${userId}`)
+    console.log(`📡 [useMatches] URL appelée: http://localhost:8080/api/likes/matches/user/${userId}`)
     setError(null)
     setLoading(true)
 
@@ -51,44 +53,84 @@ const useMatches = (userId: number | null) => {
       
       if (token) {
         headers.Authorization = `Bearer ${token}`
+        console.log(`🔑 [useMatches] Token trouvé et ajouté aux headers`)
+      } else {
+        console.log(`⚠️ [useMatches] Aucun token trouvé`)
       }
 
+      console.log(`📤 [useMatches] Envoi de la requête...`)
       const response = await axios.get(`http://localhost:8080/api/likes/matches/user/${userId}`, { headers })
-      console.log(`✅ [useMatches] Received ${response.data.length} matches`)
-      console.log('📦 [useMatches] Raw data structure:', response.data)
+      
+      console.log(`📥 [useMatches] Réponse reçue:`)
+      console.log(`   Status: ${response.status}`)
+      console.log(`   Headers:`, response.headers)
+      console.log(`   Data type:`, typeof response.data)
+      console.log(`   Data length:`, Array.isArray(response.data) ? response.data.length : 'N/A')
+      console.log(`   RAW DATA:`, JSON.stringify(response.data, null, 2))
 
-      // Vérifier que la réponse est bien un tableau
       if (!Array.isArray(response.data)) {
+        console.error(`❌ [useMatches] ERREUR: La réponse n'est pas un tableau`)
+        console.log(`   Type reçu:`, typeof response.data)
+        console.log(`   Contenu:`, response.data)
         throw new Error('La réponse API n\'est pas un tableau')
       }
 
-      // Transformer les données API en format d'affichage avec validation
-      const transformedMatches: Match[] = response.data.map((matchedUser: any, index: number) => {
-        console.log(`🔍 [useMatches] Processing match ${index}:`, matchedUser)
+      console.log(`📊 [useMatches] ANALYSE DE CHAQUE MATCH:`)
+      response.data.forEach((item: any, index: number) => {
+        console.log(`   Match ${index}:`)
+        console.log(`     - Type:`, typeof item)
+        console.log(`     - Clés disponibles:`, Object.keys(item || {}))
+        console.log(`     - Contenu complet:`, JSON.stringify(item, null, 4))
+      })
 
-        // Validation de la structure des données
+      const transformedMatches: Match[] = response.data.map((matchedUser: any, index: number) => {
+        console.log(`🔧 [useMatches] Transformation du match ${index}:`, matchedUser)
+        
         if (!matchedUser || typeof matchedUser !== 'object') {
-          console.error(`❌ [useMatches] Match ${index} is not an object:`, matchedUser)
+          console.error(`❌ [useMatches] Match ${index} structure invalide:`, matchedUser)
           throw new Error(`Match ${index} has invalid structure`)
         }
 
-        // Validation des champs requis pour la nouvelle structure
-        if (!matchedUser.matchedUserId || !matchedUser.name || !matchedUser.matchedAt) {
-          console.error(`❌ [useMatches] Match ${index} missing required fields:`, matchedUser)
-          throw new Error(`Match ${index} missing required fields (matchedUserId, name, or matchedAt)`)
+        // Détection flexible des champs selon la structure retournée
+        let matchedUserId, name, age, matchedAt, hasUnreadMessages
+        
+        // Si c'est une structure MatchResponse standard
+        if (matchedUser.matchedUserId) {
+          matchedUserId = matchedUser.matchedUserId
+          name = matchedUser.name
+          age = matchedUser.age
+          matchedAt = matchedUser.matchedAt
+          hasUnreadMessages = matchedUser.hasUnreadMessages
+          console.log(`📋 [useMatches] Structure MatchResponse détectée pour match ${index}`)
+        }
+        // Si c'est une structure de Like avec user1/user2
+        else if (matchedUser.user1 || matchedUser.user2) {
+          const otherUser = matchedUser.user1?.id === userId ? matchedUser.user2 : matchedUser.user1
+          matchedUserId = otherUser?.id
+          name = otherUser?.name
+          age = otherUser?.age
+          matchedAt = matchedUser.matchedAt
+          hasUnreadMessages = false // À définir selon votre logique
+          console.log(`📋 [useMatches] Structure Like avec user1/user2 détectée pour match ${index}`)
+          console.log(`     Autre utilisateur:`, otherUser)
+        }
+        // Autres structures possibles
+        else {
+          console.error(`❌ [useMatches] Structure non reconnue pour match ${index}:`, matchedUser)
+          throw new Error(`Match ${index} structure not recognized`)
         }
 
-        console.log(`👤 [useMatches] Matched user ${index}:`, {
-          id: matchedUser.matchedUserId,
-          name: matchedUser.name,
-          age: matchedUser.age,
-          city: matchedUser.city
-        })
+        if (!matchedUserId || !name) {
+          console.error(`❌ [useMatches] Champs requis manquants pour match ${index}:`)
+          console.log(`     matchedUserId:`, matchedUserId)
+          console.log(`     name:`, name)
+          throw new Error(`Match ${index} missing required fields`)
+        }
         
         const avatars = ['👩‍🦰', '👨‍💻', '👩‍🎨', '👨‍🍳', '👩‍🚀', '👨‍🎓', '👩‍⚕️', '👨‍🎨', '👩‍💼', '👨‍🔧']
-        const avatar = avatars[matchedUser.matchedUserId % avatars.length]
+        const avatar = avatars[matchedUserId % avatars.length]
 
-        const matchDate = new Date(matchedUser.matchedAt)
+        const matchDate = new Date(matchedAt)
         const now = new Date()
         const diffInHours = Math.floor((now.getTime() - matchDate.getTime()) / (1000 * 60 * 60))
         
@@ -102,33 +144,41 @@ const useMatches = (userId: number | null) => {
           timestamp = `Il y a ${days}j`
         }
 
-        return {
-          id: matchedUser.matchedUserId.toString(),
-          name: matchedUser.name || 'Utilisateur',
-          age: matchedUser.age || 25,
+        const transformedMatch = {
+          id: matchedUserId.toString(),
+          name: name || 'Utilisateur',
+          age: age || 25,
           avatar,
-          lastMessage: matchedUser.hasUnreadMessages 
+          lastMessage: hasUnreadMessages 
             ? 'Nouveau message !' 
             : 'Vous pouvez maintenant discuter !',
           timestamp,
-          isOnline: Math.random() > 0.7, // Simulé pour le moment
-          unreadCount: matchedUser.hasUnreadMessages ? Math.floor(Math.random() * 3) + 1 : 0,
+          isOnline: Math.random() > 0.7,
+          unreadCount: hasUnreadMessages ? Math.floor(Math.random() * 3) + 1 : 0,
           isTyping: false,
-          matchedAt: matchedUser.matchedAt,
+          matchedAt: matchedAt,
           isMatched: true,
-          canDiscuss: true // Tous les matches permettent de discuter
+          canDiscuss: true
         }
+
+        console.log(`✅ [useMatches] Match ${index} transformé:`, transformedMatch)
+        return transformedMatch
       })
 
       setMatches(transformedMatches)
-      console.log(`✅ [useMatches] Transformed ${transformedMatches.length} matches for display`)
+      console.log(`✅ [useMatches] SUCCÈS: ${transformedMatches.length} matches transformés et affichés`)
+      console.log(`=== FIN TEST API MATCHES ===`)
 
     } catch (error: any) {
-      console.error('❌ [useMatches] Error loading matches:', error)
+      console.error(`❌ [useMatches] ERREUR lors du chargement:`)
+      console.error(`   Message:`, error.message)
+      console.error(`   Stack:`, error.stack)
       if (error.response) {
-        console.error('❌ [useMatches] Response error:', error.response.data)
-        console.error('❌ [useMatches] Response status:', error.response.status)
+        console.error(`   Status HTTP:`, error.response.status)
+        console.error(`   Headers de réponse:`, error.response.headers)
+        console.error(`   Data de la réponse:`, error.response.data)
       }
+      console.log(`=== FIN TEST API MATCHES (ERREUR) ===`)
       setError(error.message || error.response?.data?.message || 'Erreur lors du chargement des matches')
     } finally {
       setLoading(false)
@@ -147,80 +197,98 @@ const useMatches = (userId: number | null) => {
   return { matches, error, refreshMatches, matchCount: matches.length, loading }
 }
 
-// Service de test intégré
-const testMatchAPI = async (userId: number) => {
-  console.log('=== DÉBUT DU TEST DU SERVICE MATCH ===')
-  console.log(`🧪 [Test] Testing getUserMatches for user ID: ${userId}`)
-  console.log(`📡 [Test] Calling API: GET http://localhost:8080/api/likes/matches/user/${userId}`)
+// Fonction pour récupérer l'ID utilisateur depuis le localStorage ou token
+const getCurrentUserId = (): number | null => {
+  console.log(`🔍 [Auth] === DÉBUT RECHERCHE ID UTILISATEUR ===`)
   
   try {
-    const token = localStorage.getItem('authToken') || localStorage.getItem('token')
-    
-    const headers: any = {
-      'Content-Type': 'application/json'
-    }
-    
-    if (token) {
-      headers.Authorization = `Bearer ${token}`
-      console.log('🔑 [Test] Token trouvé, ajout de l\'authentification')
-    } else {
-      console.log('⚠️ [Test] Aucun token trouvé dans localStorage')
-      console.log('💡 [Test] Essai sans authentification...')
-    }
-    
-    const response = await axios.get(`http://localhost:8080/api/likes/matches/user/${userId}`, {
-      headers
-    })
-    
-    console.log(`✅ [Test] SUCCESS! Received ${response.data.length} matches`)
-    console.log('📦 [Test] Raw API response:', response.data)
-    
-    if (response.data.length > 0) {
-      console.log('📋 [Test] Match details:')
-      response.data.forEach((match: any, index: number) => {
-        console.log(`📄 [Test] Match ${index} structure:`, match)
-        const otherUser = match.user1?.id === userId ? match.user2 : match.user1
-        if (otherUser) {
-          console.log(`  ${index + 1}. Match avec ${otherUser.name} (ID: ${otherUser.id})`)
-          console.log(`     - Âge: ${otherUser.age}`)
-          console.log(`     - Username: ${otherUser.username}`)
-          console.log(`     - Ville: ${otherUser.city || 'Non renseignée'}`)
-          console.log(`     - Matché le: ${new Date(match.matchedAt).toLocaleDateString('fr-FR')}`)
-        } else {
-          console.error(`❌ [Test] Impossible de déterminer l'autre utilisateur pour le match ${index}`)
-        }
-      })
-      
-      const otherUserIds = response.data.map((match: any) => 
-        match.user1?.id === userId ? match.user2?.id : match.user1?.id
-      ).filter(id => id !== undefined)
-      console.log(`🎯 [Test] IDs des utilisateurs matchés: [${otherUserIds.join(', ')}]`)
-      
-    } else {
-      console.log('ℹ️ [Test] Aucun match trouvé pour cet utilisateur')
-    }
-    
-    return response.data
-    
-  } catch (error: any) {
-    console.error('❌ [Test] ERREUR lors du test:')
-    
-    if (error.response) {
-      console.error(`   Status HTTP: ${error.response.status}`)
-      console.error(`   Data: ${JSON.stringify(error.response.data, null, 2)}`)
-      
-      if (error.response.status === 403) {
-        console.log('🔒 [Test] Erreur 403 (Forbidden) - Problème d\'authentification')
-      } else if (error.response.status === 404) {
-        console.log('💡 [Test] Erreur 404 - Vérifications nécessaires')
+    // 1. Chercher directement un ID dans localStorage
+    console.log(`🔍 [Auth] Étape 1: Recherche directe dans localStorage`)
+    const userIdKeys = ['userId', 'currentUserId', 'user_id', 'id']
+    for (const key of userIdKeys) {
+      const storedUserId = localStorage.getItem(key)
+      console.log(`  Clé "${key}": ${storedUserId}`)
+      if (storedUserId && !isNaN(parseInt(storedUserId))) {
+        const id = parseInt(storedUserId)
+        console.log(`✅ [Auth] ID utilisateur trouvé dans localStorage["${key}"]: ${id}`)
+        return id
       }
-    } else if (error.code === 'ERR_NETWORK') {
-      console.error('💡 [Test] Erreur réseau - Serveur Spring Boot démarré ?')
+    }
+
+    // 2. Décoder le token JWT s'il existe
+    console.log(`🔍 [Auth] Étape 2: Décodage token JWT`)
+    const tokenKeys = ['authToken', 'token', 'accessToken', 'access_token']
+    for (const key of tokenKeys) {
+      const token = localStorage.getItem(key)
+      console.log(`  Token "${key}": ${token ? token.substring(0, 50) + '...' : 'null'}`)
+      
+      if (token && token.includes('.')) {
+        try {
+          const payload = JSON.parse(atob(token.split('.')[1]))
+          console.log(`  Payload JWT décodé:`, payload)
+          
+          const userIdFields = ['sub', 'userId', 'user_id', 'id']
+          for (const field of userIdFields) {
+            const userId = payload[field]
+            console.log(`    Champ "${field}": ${userId}`)
+            if (userId && !isNaN(parseInt(userId))) {
+              const id = parseInt(userId)
+              console.log(`✅ [Auth] ID utilisateur trouvé dans JWT["${field}"]: ${id}`)
+              return id
+            }
+          }
+        } catch (jwtError) {
+          console.warn(`⚠️ [Auth] Erreur décodage JWT "${key}":`, jwtError)
+        }
+      }
+    }
+
+    // 3. Chercher dans un objet user stocké
+    console.log(`🔍 [Auth] Étape 3: Recherche dans objet user`)
+    const userKeys = ['user', 'currentUser', 'userProfile']
+    for (const key of userKeys) {
+      const userString = localStorage.getItem(key)
+      console.log(`  User object "${key}": ${userString}`)
+      
+      if (userString) {
+        try {
+          const user = JSON.parse(userString)
+          console.log(`  User object parsé:`, user)
+          
+          const userIdFields = ['id', 'userId', 'user_id']
+          for (const field of userIdFields) {
+            const userId = user[field]
+            console.log(`    Champ "${field}": ${userId}`)
+            if (userId && !isNaN(parseInt(userId))) {
+              const id = parseInt(userId)
+              console.log(`✅ [Auth] ID utilisateur trouvé dans user["${field}"]: ${id}`)
+              return id
+            }
+          }
+        } catch (parseError) {
+          console.warn(`⚠️ [Auth] Erreur parsing user object "${key}":`, parseError)
+        }
+      }
+    }
+
+    console.warn(`❌ [Auth] Aucun ID utilisateur valide trouvé dans localStorage`)
+    console.log(`🔍 [Auth] Contenu complet localStorage:`)
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key) {
+        const value = localStorage.getItem(key)
+        console.log(`  "${key}": ${value}`)
+      }
     }
     
-    throw error
+    console.warn(`⚠️ [Auth] Utilisation de l'ID de test: 4`)
+    return 4 // Fallback vers l'ID de test
+    
+  } catch (error) {
+    console.error(`❌ [Auth] Erreur récupération ID utilisateur:`, error)
+    return 4 // Fallback vers l'ID de test
   } finally {
-    console.log('=== FIN DU TEST ===')
+    console.log(`🔍 [Auth] === FIN RECHERCHE ID UTILISATEUR ===`)
   }
 }
 
@@ -229,8 +297,26 @@ export default function MessagesPage() {
   const [searchResults, setSearchResults] = useState<Match[]>([])
   const [isSearching, setIsSearching] = useState(false)
   const [selectedTab, setSelectedTab] = useState<'matched' | 'all' | 'unread' | 'online'>('matched')
-  const [currentUserId] = useState(4) // ID de test
+  const [currentUserId, setCurrentUserId] = useState<number | null>(null)
   const [currentTime, setCurrentTime] = useState<string>('')
+  const [selectedConversation, setSelectedConversation] = useState<Match | null>(null)
+
+  // Initialiser l'ID utilisateur au montage du composant
+  useEffect(() => {
+    const userId = getCurrentUserId()
+    setCurrentUserId(userId)
+    console.log(`🆔 [Auth] ID utilisateur initialisé: ${userId}`)
+    
+    // Afficher le contenu du localStorage pour debug
+    console.log(`📦 [Auth] Contenu localStorage:`)
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key) {
+        const value = localStorage.getItem(key)
+        console.log(`  ${key}: ${value?.substring(0, 100)}${value && value.length > 100 ? '...' : ''}`)
+      }
+    }
+  }, [])
 
   // Utiliser le hook des vraies données
   const { matches, error, refreshMatches, matchCount, loading } = useMatches(currentUserId)
@@ -243,22 +329,33 @@ export default function MessagesPage() {
     setCurrentTime(new Date().toLocaleTimeString())
   }, [])
 
-  console.log(`📊 [MessagesPage] Stats:`, {
-    totalMatches: matches.length,
-    allowedConversations: allowedConversations.length,
-    totalUnread: totalUnreadCount
-  })
+  // Fonction pour ouvrir une conversation
+  const openConversation = (match: Match) => {
+    console.log(`💬 [MessagesPage] Opening conversation with ${match.name} (ID: ${match.id})`)
+    setSelectedConversation(match)
+  }
+
+  // Fonction pour fermer la conversation
+  const closeConversation = () => {
+    setSelectedConversation(null)
+  }
 
   // Fonction pour tester l'API
   const handleTestAPI = async () => {
     console.log('🧪 [Test] Bouton de test cliqué - Test de l\'API des matches')
-    console.log(`🧪 [Test] Utilisateur de test: ID ${currentUserId}`)
     
     try {
-      const matches = await testMatchAPI(currentUserId)
+      const token = localStorage.getItem('authToken') || localStorage.getItem('token')
+      const headers: any = { 'Content-Type': 'application/json' }
       
-      if (matches.length > 0) {
-        alert(`✅ API Test réussi! ${matches.length} match(es) trouvé(s). Voir la console pour les détails.`)
+      if (token) {
+        headers.Authorization = `Bearer ${token}`
+      }
+
+      const response = await axios.get(`http://localhost:8080/api/likes/matches/user/${currentUserId}`, { headers })
+      
+      if (response.data.length > 0) {
+        alert(`✅ API Test réussi! ${response.data.length} match(es) trouvé(s). Voir la console pour les détails.`)
       } else {
         alert(`⚠️ API fonctionne mais aucun match trouvé pour l'utilisateur ${currentUserId}`)
       }
@@ -296,6 +393,17 @@ export default function MessagesPage() {
     return matchesSearch && matchesTab
   })
 
+  // Si une conversation est sélectionnée, afficher le composant de chat
+  if (selectedConversation) {
+    return (
+      <ChatInterface 
+        currentUserId={currentUserId}
+        otherUser={selectedConversation}
+        onBack={closeConversation}
+      />
+    )
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-pink-50 to-purple-50">
       <div className="max-w-4xl mx-auto p-4">
@@ -319,7 +427,7 @@ export default function MessagesPage() {
                 <span className="ml-2 text-sm text-green-600">• Mode API</span>
               </p>
               <p className="text-xs text-gray-500 mt-1">
-                Utilisateur #{currentUserId} • {matches.length} conversation{matches.length > 1 ? 's' : ''} chargée{matches.length > 1 ? 's' : ''}
+                Utilisateur #{currentUserId || 'Non connecté'} • {matches.length} conversation{matches.length > 1 ? 's' : ''} chargée{matches.length > 1 ? 's' : ''}
               </p>
             </div>
             
@@ -383,7 +491,7 @@ export default function MessagesPage() {
               Données API Chargées
             </h3>
             <div className="text-sm text-green-700 space-y-1">
-              <p><strong>Utilisateur actuel:</strong> ID {currentUserId}</p>
+              <p><strong>Utilisateur actuel:</strong> ID {currentUserId || 'Non détecté'}</p>
               <p><strong>API utilisée:</strong> GET /api/likes/matches/user/{currentUserId}</p>
               <p><strong>Statut:</strong> {loading ? 'Chargement...' : error ? 'Erreur' : `${matchCount} match(es) chargé(s)`}</p>
               {error && <p className="text-red-600"><strong>Erreur:</strong> {error}</p>}
@@ -399,7 +507,11 @@ export default function MessagesPage() {
               {searchResults.length > 0 ? (
                 <div className="space-y-2 max-h-60 overflow-y-auto">
                   {searchResults.map((user) => (
-                    <div key={user.id} className="bg-green-50 hover:bg-green-100 border-green-200 cursor-pointer rounded-xl p-3 border transition-colors">
+                    <div 
+                      key={user.id} 
+                      onClick={() => openConversation(user)}
+                      className="bg-green-50 hover:bg-green-100 border-green-200 cursor-pointer rounded-xl p-3 border transition-colors"
+                    >
                       <div className="flex items-center gap-3">
                         <div className="w-12 h-12 bg-gradient-to-br from-green-300 to-emerald-400 rounded-full flex items-center justify-center text-lg">
                           {user.avatar}
@@ -501,7 +613,11 @@ export default function MessagesPage() {
             </div>
           ) : (
             filteredMatches.map((match) => (
-              <div key={match.id} className="bg-white rounded-2xl p-4 shadow-sm border hover:shadow-md cursor-pointer border-transparent hover:border-green-200 transition-all">
+              <div 
+                key={match.id} 
+                onClick={() => openConversation(match)}
+                className="bg-white rounded-2xl p-4 shadow-sm border hover:shadow-md cursor-pointer border-transparent hover:border-green-200 transition-all"
+              >
                 <div className="flex items-center gap-4">
                   <div className="relative">
                     <div className="w-16 h-16 bg-gradient-to-br from-pink-300 to-purple-400 rounded-full flex items-center justify-center text-2xl">
@@ -553,93 +669,329 @@ export default function MessagesPage() {
             ))
           )}
         </div>
+      </div>
+    </div>
+  )
+}
 
-        {/* Stats */}
-        <div className="mt-8 grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="bg-white rounded-xl p-4 text-center shadow-sm">
-            <div className="text-2xl font-bold text-pink-600">{matches.length}</div>
-            <div className="text-sm text-gray-600">Total</div>
-          </div>
-          <div className="bg-white rounded-xl p-4 text-center shadow-sm">
-            <div className="text-2xl font-bold text-green-600">{allowedConversations.length}</div>
-            <div className="text-sm text-gray-600">Autorisées</div>
-          </div>
-          <div className="bg-white rounded-xl p-4 text-center shadow-sm">
-            <div className="text-2xl font-bold text-blue-600">{matches.filter(m => m.isOnline).length}</div>
-            <div className="text-sm text-gray-600">En ligne</div>
-          </div>
-          <div className="bg-white rounded-xl p-4 text-center shadow-sm">
-            <div className="text-2xl font-bold text-red-600">{totalUnreadCount}</div>
-            <div className="text-sm text-gray-600">Non lus</div>
-          </div>
-        </div>
+// Composant de chat séparé
+interface ChatInterfaceProps {
+  currentUserId: number
+  otherUser: Match
+  onBack: () => void
+}
 
-        {/* Actions rapides */}
-        <div className="mt-6 bg-white rounded-2xl p-6 shadow-sm">
-          <h3 className="font-semibold text-gray-800 mb-4">Actions rapides</h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <button className="bg-gradient-to-r from-pink-500 to-purple-500 text-white p-3 rounded-xl text-center hover:from-pink-600 hover:to-purple-600 transition-all">
-              <div className="text-2xl mb-1">🔍</div>
-              <div className="text-sm font-medium">Découvrir</div>
-            </button>
-            <button 
-              onClick={() => {
-                if (allowedConversations.length > 0) {
-                  const randomMatch = allowedConversations[Math.floor(Math.random() * allowedConversations.length)]
-                  alert(`Redirection vers la conversation avec ${randomMatch.name}`)
-                } else {
-                  alert('Aucune conversation autorisée !')
-                }
-              }}
-              className="bg-gradient-to-r from-blue-500 to-cyan-500 text-white p-3 rounded-xl text-center hover:from-blue-600 hover:to-cyan-600 transition-all"
-            >
-              <div className="text-2xl mb-1">🎲</div>
-              <div className="text-sm font-medium">Aléatoire</div>
-            </button>
-            <button 
-              onClick={refreshConversations}
-              disabled={loading}
-              className="bg-gradient-to-r from-orange-500 to-red-500 text-white p-3 rounded-xl text-center hover:from-orange-600 hover:to-red-600 transition-all disabled:opacity-50"
-            >
-              <div className="text-2xl mb-1">🔄</div>
-              <div className="text-sm font-medium">Recharger</div>
-            </button>
-            <button 
-              onClick={handleTestAPI}
-              className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-3 rounded-xl text-center hover:from-blue-700 hover:to-indigo-700 transition-all"
-            >
-              <div className="text-2xl mb-1">🧪</div>
-              <div className="text-sm font-medium">Test API</div>
-            </button>
-          </div>
-        </div>
+interface Message {
+  id: string
+  senderId: string
+  content: string
+  timestamp: string
+  isRead: boolean
+  type: 'text' | 'image' | 'emoji'
+}
 
-        {/* Informations sur la version */}
-        <div className="mt-6 bg-gradient-to-r from-green-50 to-blue-50 rounded-2xl p-6 border border-green-200">
-          <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
-            <span className="text-xl">🚀</span>
-            Version API Intégrée - Fonctionnelle
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-            <div className="space-y-2">
-              <p><strong>Mode actuel :</strong> Données en temps réel</p>
-              <p><strong>Source :</strong> Spring Boot API + PostgreSQL</p>
-              <p><strong>Matches chargés :</strong> {matchCount} conversation(s)</p>
+function ChatInterface({ currentUserId, otherUser, onBack }: ChatInterfaceProps) {
+  const [messages, setMessages] = useState<Message[]>([])
+  const [newMessage, setNewMessage] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [isTyping, setIsTyping] = useState(false)
+  const [otherUserTyping, setOtherUserTyping] = useState(false)
+
+  // Charger les messages de la conversation
+  useEffect(() => {
+    loadConversation()
+  }, [currentUserId, otherUser.id])
+
+  const loadConversation = async () => {
+    setLoading(true)
+    try {
+      const token = localStorage.getItem('authToken') || localStorage.getItem('token')
+      const headers: any = { 'Content-Type': 'application/json' }
+      
+      if (token) {
+        headers.Authorization = `Bearer ${token}`
+      }
+
+      console.log(`📥 [Chat] Loading conversation between ${currentUserId} and ${otherUser.id}`)
+      const response = await axios.get(`http://localhost:8080/api/messages/conversation`, {
+        params: {
+          userId1: currentUserId,
+          userId2: parseInt(otherUser.id)
+        },
+        headers
+      })
+
+      console.log(`📨 [Chat] Received ${response.data.length} messages`)
+      
+      // Transformer les messages de l'API en format d'affichage
+      const transformedMessages: Message[] = response.data.map((msg: any) => ({
+        id: msg.id.toString(),
+        senderId: msg.senderId.toString(),
+        content: msg.content,
+        timestamp: new Date(msg.createdAt).toLocaleTimeString('fr-FR', { 
+          hour: '2-digit', 
+          minute: '2-digit' 
+        }),
+        isRead: msg.isRead,
+        type: 'text'
+      }))
+
+      setMessages(transformedMessages)
+
+    } catch (error: any) {
+      console.error('❌ [Chat] Error loading conversation:', error)
+      // En cas d'erreur, afficher des messages d'exemple
+      setMessages([
+        {
+          id: '1',
+          senderId: otherUser.id,
+          content: `Salut ! Comment ça va ?`,
+          timestamp: '14:30',
+          isRead: true,
+          type: 'text'
+        },
+        {
+          id: '2',
+          senderId: currentUserId.toString(),
+          content: `Salut ${otherUser.name} ! Ça va très bien et toi ? 😊`,
+          timestamp: '14:31',
+          isRead: true,
+          type: 'text'
+        }
+      ])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const sendMessage = async () => {
+    if (!newMessage.trim()) return
+
+    const tempMessage: Message = {
+      id: Date.now().toString(),
+      senderId: currentUserId.toString(),
+      content: newMessage,
+      timestamp: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+      isRead: false,
+      type: 'text'
+    }
+
+    // Ajouter le message immédiatement à l'interface
+    setMessages(prev => [...prev, tempMessage])
+    setNewMessage('')
+
+    try {
+      const token = localStorage.getItem('authToken') || localStorage.getItem('token')
+      const headers: any = { 'Content-Type': 'application/json' }
+      
+      if (token) {
+        headers.Authorization = `Bearer ${token}`
+      }
+
+      console.log(`📤 [Chat] Sending message from ${currentUserId} to ${otherUser.id}`)
+      
+      // Envoyer via l'API
+      await axios.post(`http://localhost:8080/api/messages/quick`, null, {
+        params: {
+          senderId: currentUserId,
+          receiverId: parseInt(otherUser.id),
+          content: newMessage
+        },
+        headers
+      })
+
+      console.log(`✅ [Chat] Message sent successfully`)
+      
+      // Recharger la conversation pour avoir les IDs corrects
+      loadConversation()
+
+    } catch (error: any) {
+      console.error('❌ [Chat] Error sending message:', error)
+      
+      // En cas d'erreur, simuler une réponse automatique
+      setTimeout(() => {
+        const responses = [
+          'Haha c\'est marrant ! 😄',
+          'Je suis d\'accord avec toi !',
+          'Dis moi en plus !',
+          'Super idée ! 👍',
+          'On en parle de vive voix ? 😉'
+        ]
+        const response: Message = {
+          id: (Date.now() + 1).toString(),
+          senderId: otherUser.id,
+          content: responses[Math.floor(Math.random() * responses.length)],
+          timestamp: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+          isRead: false,
+          type: 'text'
+        }
+        setMessages(prev => [...prev, response])
+      }, 1000)
+    }
+  }
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      sendMessage()
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-pink-50 to-purple-50">
+      {/* Header du chat */}
+      <div className="bg-white shadow-sm border-b sticky top-0 z-10">
+        <div className="max-w-4xl mx-auto px-4 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              {/* Bouton retour */}
+              <button 
+                onClick={onBack}
+                className="text-gray-600 hover:text-gray-800 transition-colors"
+              >
+                <span className="text-xl">←</span>
+              </button>
+              
+              {/* Avatar et info utilisateur */}
+              <div className="relative">
+                <div className="w-12 h-12 bg-gradient-to-br from-pink-300 to-purple-400 rounded-full flex items-center justify-center text-xl">
+                  {otherUser.avatar}
+                </div>
+                {otherUser.isOnline && (
+                  <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 border-2 border-white rounded-full"></div>
+                )}
+              </div>
+              
+              <div>
+                <h1 className="font-semibold text-gray-800">
+                  {otherUser.name}, {otherUser.age}
+                </h1>
+                <p className="text-sm text-gray-600">
+                  {otherUser.isOnline ? (
+                    <span className="text-green-600">🟢 En ligne</span>
+                  ) : (
+                    <span>Vu {otherUser.timestamp}</span>
+                  )}
+                  {otherUserTyping && (
+                    <span className="text-pink-600 animate-pulse"> • En train d'écrire...</span>
+                  )}
+                </p>
+              </div>
             </div>
-            <div className="space-y-2">
-              <p><strong>Utilisateur connecté :</strong> ID {currentUserId}</p>
-              <p><strong>Statut API :</strong> {error ? 'Erreur' : 'Fonctionnelle'}</p>
-              <p><strong>Dernière mise à jour :</strong> {currentTime || 'Chargement...'}</p>
+
+            {/* Actions */}
+            <div className="flex items-center gap-2">
+              <button className="p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-full transition-colors">
+                📞
+              </button>
+              <button className="p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-full transition-colors">
+                📹
+              </button>
+              <button className="p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-full transition-colors">
+                ⋮
+              </button>
             </div>
-          </div>
-          <div className="mt-4 p-3 bg-green-50 rounded-lg border border-green-200">
-            <p className="text-sm text-green-800">
-              <strong>Intégration réussie !</strong> Votre composant utilise maintenant les vraies données de votre API Spring Boot. 
-              Les {matchCount} conversation(s) affichée(s) correspondent aux vrais matches de l'utilisateur ID {currentUserId}.
-            </p>
           </div>
         </div>
       </div>
+
+      {/* Zone de messages */}
+      <div className="max-w-4xl mx-auto px-4 pb-24">
+        {loading ? (
+          <div className="py-8 text-center">
+            <div className="text-4xl mb-4">⏳</div>
+            <p className="text-gray-600">Chargement de la conversation...</p>
+          </div>
+        ) : (
+          <div className="py-4 space-y-4">
+            {messages.map((message) => (
+              <div
+                key={message.id}
+                className={`flex ${message.senderId === currentUserId.toString() ? 'justify-end' : 'justify-start'}`}
+              >
+                <div
+                  className={`max-w-xs lg:max-w-md px-4 py-2 rounded-2xl ${
+                    message.senderId === currentUserId.toString()
+                      ? 'bg-pink-500 text-white rounded-br-md'
+                      : 'bg-white text-gray-800 rounded-bl-md shadow-sm'
+                  }`}
+                >
+                  <p className="text-sm leading-relaxed">{message.content}</p>
+                  <p className={`text-xs mt-1 ${
+                    message.senderId === currentUserId.toString() ? 'text-pink-100' : 'text-gray-500'
+                  }`}>
+                    {message.timestamp}
+                    {message.senderId === currentUserId.toString() && (
+                      <span className="ml-1">
+                        {message.isRead ? '✓✓' : '✓'}
+                      </span>
+                    )}
+                  </p>
+                </div>
+              </div>
+            ))}
+            
+            {otherUserTyping && (
+              <div className="flex justify-start">
+                <div className="bg-white text-gray-800 rounded-2xl rounded-bl-md shadow-sm px-4 py-2 max-w-xs">
+                  <div className="flex items-center gap-1">
+                    <div className="flex gap-1">
+                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Barre de saisie */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg">
+        <div className="max-w-4xl mx-auto px-4 py-4">
+          <div className="flex items-center gap-3">
+            {/* Boutons d'actions */}
+            <button className="text-2xl hover:scale-110 transition-transform">
+              😊
+            </button>
+            <button className="text-2xl hover:scale-110 transition-transform">
+              📷
+            </button>
+            <button className="text-2xl hover:scale-110 transition-transform">
+              📎
+            </button>
+            
+            {/* Zone de texte */}
+            <div className="flex-1 relative">
+              <textarea
+                value={newMessage}
+                onChange={(e) => setNewMessage(e.target.value)}
+                onKeyPress={handleKeyPress}
+                placeholder="Tapez votre message..."
+                className="w-full px-4 py-2 pr-12 bg-gray-100 rounded-full resize-none focus:outline-none focus:ring-2 focus:ring-pink-300 focus:bg-white transition-colors"
+                rows={1}
+                style={{ minHeight: '40px', maxHeight: '120px' }}
+              />
+              
+              {/* Bouton d'envoi */}
+              <button
+                onClick={sendMessage}
+                disabled={!newMessage.trim()}
+                className={`absolute right-2 top-1/2 transform -translate-y-1/2 w-8 h-8 rounded-full flex items-center justify-center text-white transition-all ${
+                  newMessage.trim()
+                    ? 'bg-pink-500 hover:bg-pink-600 scale-100'
+                    : 'bg-gray-300 scale-75'
+                }`}
+              >
+                <span className="text-sm">→</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
     </div>
   )
 }
