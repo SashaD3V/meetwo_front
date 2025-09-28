@@ -1,33 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import api from '@/lib/axios'
-
-interface UserProfile {
-  id?: number
-  username?: string
-  email?: string
-  name?: string
-  firstName?: string
-  lastName?: string
-  age?: number
-  birthDate?: string
-  location?: string
-  city?: string
-  bio?: string
-  biography?: string
-  images: string[]
-  interests: string[]
-  job?: string
-  education?: string
-  height?: string
-  gender?: 'HOMME' | 'FEMME'
-  seekingRelationshipType?: 'RELATION_SERIEUSE' | 'RELATION_CASUAL'
-  lookingFor?: string
-  smoking?: boolean
-  drinking?: 'never' | 'socially' | 'regularly'
-}
+import { useUserProfile } from '../hooks/useUserProfile'
 
 const availableInterests = [
   'SPORT', 'MUSIQUE', 'CINEMA', 'VOYAGE', 'CUISINE', 'LECTURE', 'ART', 
@@ -38,128 +13,100 @@ const availableInterests = [
 
 export default function EditProfilePage() {
   const router = useRouter()
-  const [profile, setProfile] = useState<UserProfile>({
-    images: [],
-    interests: []
-  })
-  const [isLoading, setIsLoading] = useState(true)
-  const [isSaving, setIsSaving] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  
+  // 🔍 [EditProfile] Hook de gestion du profil utilisateur
+  const {
+    profile,
+    photos,
+    isLoading,
+    isSaving,
+    error,
+    updateField,
+    saveProfile,
+    uploadPhoto,
+    deletePhoto,
+    canAddPhoto
+  } = useUserProfile()
+
   const [activeTab, setActiveTab] = useState<'basic' | 'interests' | 'details' | 'photos'>('basic')
+  const [uploadError, setUploadError] = useState<string | null>(null)
 
-  // Charger les données utilisateur au démarrage
-  useEffect(() => {
-    const loadUserProfile = async () => {
-      try {
-        const storedUser = localStorage.getItem('user')
-        
-        if (!storedUser) {
-          router.push('/auth/login')
-          return
-        }
+  console.log('🔍 [EditProfile] État actuel:', {
+    profileLoaded: !!profile,
+    photosCount: photos.length,
+    isLoading,
+    isSaving
+  })
 
-        const userData = JSON.parse(storedUser)
-        
-        // Adapter les données du backend vers le format du profil
-        setProfile({
-          id: userData.id,
-          username: userData.username,
-          email: userData.email,
-          name: userData.name || userData.firstName || userData.username,
-          firstName: userData.firstName,
-          lastName: userData.lastName,
-          age: userData.age,
-          birthDate: userData.birthDate,
-          location: userData.city || '',
-          city: userData.city,
-          bio: userData.biography || '',
-          biography: userData.biography,
-          images: [], // Pour l'instant vide, tu pourras ajouter les photos plus tard
-          interests: userData.interests || [],
-          job: 'Non renseigné', // Champs pas encore dans ton backend
-          education: 'Non renseigné',
-          height: 'Non renseigné',
-          gender: userData.gender,
-          seekingRelationshipType: userData.seekingRelationshipType,
-          lookingFor: userData.seekingRelationshipType === 'RELATION_SERIEUSE' ? 'Relation sérieuse' : 'Relation décontractée',
-          smoking: false, // Valeurs par défaut pour les nouveaux champs
-          drinking: 'socially'
-        })
-        
-      } catch (error) {
-        console.error('Erreur lors du chargement du profil:', error)
-        router.push('/auth/login')
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
-    loadUserProfile()
-  }, [router])
-
+  // 💾 [EditProfile] Sauvegarde avec gestion d'erreur
   const handleSave = async () => {
-    setIsSaving(true)
+    try {
+      console.log('💾 [EditProfile] Début sauvegarde...')
+      await saveProfile()
+      console.log('✅ [EditProfile] Sauvegarde réussie, redirection...')
+      router.push('/profile')
+    } catch (error) {
+      console.error('❌ [EditProfile] Erreur sauvegarde:', error)
+      alert('Erreur lors de la sauvegarde du profil')
+    }
+  }
+
+  // 🎯 [EditProfile] Gestion des centres d'intérêt
+  const toggleInterest = (interest: string) => {
+    if (!profile) return
+
+    console.log('🎯 [EditProfile] Toggle intérêt:', interest)
+    
+    const newInterests = profile.interests.includes(interest)
+      ? profile.interests.filter(i => i !== interest)
+      : [...profile.interests, interest]
+    
+    updateField('interests', newInterests)
+  }
+
+  // 📸 [EditProfile] Gestion upload de photo
+  const handlePhotoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    console.log('📸 [EditProfile] Upload photo sélectionnée:', file.name)
     
     try {
-      // Préparer les données pour ton backend
-      const updateData = {
-        firstName: profile.firstName,
-        lastName: profile.lastName,
-        birthDate: profile.birthDate,
-        biography: profile.bio,
-        city: profile.location,
-        interests: profile.interests
+      setUploadError(null)
+      await uploadPhoto(file)
+      console.log('✅ [EditProfile] Photo uploadée avec succès')
+      
+      // Réinitialiser l'input file
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
       }
-
-      console.log('Données à sauvegarder:', updateData)
-
-      // Appel à ton API pour mettre à jour le profil
-      const response = await api.put(`/users/${profile.id}`, updateData)
-      
-      // Mettre à jour le localStorage avec les nouvelles données
-      const updatedUser = response.data
-      localStorage.setItem('user', JSON.stringify(updatedUser))
-      
-      alert('Profil mis à jour avec succès !')
-      router.push('/profile')
-      
     } catch (error: any) {
-      console.error('Erreur lors de la sauvegarde:', error)
-      alert('Erreur lors de la sauvegarde du profil')
-    } finally {
-      setIsSaving(false)
+      console.error('❌ [EditProfile] Erreur upload:', error)
+      setUploadError(error.message || 'Erreur lors de l\'upload')
     }
   }
 
-  const updateProfile = (field: keyof UserProfile, value: any) => {
-    setProfile(prev => ({ ...prev, [field]: value }))
+  // 🗑️ [EditProfile] Suppression de photo
+  const handleDeletePhoto = async (photoId: number) => {
+    if (!confirm('Êtes-vous sûr de vouloir supprimer cette photo ?')) return
+
+    try {
+      console.log('🗑️ [EditProfile] Suppression photo:', photoId)
+      await deletePhoto(photoId)
+      console.log('✅ [EditProfile] Photo supprimée avec succès')
+    } catch (error) {
+      console.error('❌ [EditProfile] Erreur suppression:', error)
+      alert('Erreur lors de la suppression de la photo')
+    }
   }
 
-  const toggleInterest = (interest: string) => {
-    setProfile(prev => ({
-      ...prev,
-      interests: prev.interests.includes(interest)
-        ? prev.interests.filter(i => i !== interest)
-        : [...prev.interests, interest]
-    }))
+  // 📂 [EditProfile] Déclencher sélection de fichier
+  const triggerFileSelect = () => {
+    fileInputRef.current?.click()
   }
 
-  const addPhoto = () => {
-    // Simuler l'ajout d'une photo
-    const newPhoto = `/images/user-${profile.images.length + 1}.jpg`
-    setProfile(prev => ({
-      ...prev,
-      images: [...prev.images, newPhoto]
-    }))
-  }
-
-  const removePhoto = (index: number) => {
-    setProfile(prev => ({
-      ...prev,
-      images: prev.images.filter((_, i) => i !== index)
-    }))
-  }
-
-  // Écran de chargement
+  // 🔄 [EditProfile] Écran de chargement
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-pink-50 to-purple-50 flex items-center justify-center">
@@ -167,6 +114,32 @@ export default function EditProfilePage() {
           <div className="w-16 h-16 border-4 border-pink-200 border-t-pink-500 rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-gray-600">Chargement du profil...</p>
         </div>
+      </div>
+    )
+  }
+
+  // ❌ [EditProfile] Gestion erreur de chargement
+  if (error && !profile) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-pink-50 to-purple-50 flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-red-600 mb-4">Erreur: {error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="px-4 py-2 bg-pink-500 text-white rounded-lg hover:bg-pink-600"
+          >
+            Réessayer
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // 🚫 [EditProfile] Profil non chargé
+  if (!profile) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-pink-50 to-purple-50 flex items-center justify-center">
+        <p className="text-gray-600">Profil non disponible</p>
       </div>
     )
   }
@@ -210,6 +183,13 @@ export default function EditProfilePage() {
           </button>
         </div>
 
+        {/* Affichage erreur globale */}
+        {error && (
+          <div className="mb-4 p-4 bg-red-100 border border-red-300 rounded-xl text-red-700">
+            {error}
+          </div>
+        )}
+
         {/* Onglets */}
         <div className="flex overflow-x-auto mb-6 bg-white rounded-2xl p-2 shadow-sm">
           <button
@@ -230,7 +210,7 @@ export default function EditProfilePage() {
                 : 'text-gray-600 hover:bg-gray-100'
             }`}
           >
-            📸 Photos
+            📸 Photos ({photos.length}/6)
           </button>
           <button
             onClick={() => setActiveTab('interests')}
@@ -240,7 +220,7 @@ export default function EditProfilePage() {
                 : 'text-gray-600 hover:bg-gray-100'
             }`}
           >
-            ❤️ Centres d'intérêt
+            ❤️ Centres d'intérêt ({profile.interests.length})
           </button>
           <button
             onClick={() => setActiveTab('details')}
@@ -269,7 +249,7 @@ export default function EditProfilePage() {
                 <input
                   type="text"
                   value={profile.firstName || ''}
-                  onChange={(e) => updateProfile('firstName', e.target.value)}
+                  onChange={(e) => updateField('firstName', e.target.value)}
                   style={{ color: '#111827' }}
                   className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-300 focus:border-transparent"
                   placeholder="Votre prénom"
@@ -284,7 +264,7 @@ export default function EditProfilePage() {
                 <input
                   type="text"
                   value={profile.lastName || ''}
-                  onChange={(e) => updateProfile('lastName', e.target.value)}
+                  onChange={(e) => updateField('lastName', e.target.value)}
                   style={{ color: '#111827' }}
                   className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-300 focus:border-transparent"
                   placeholder="Votre nom"
@@ -299,7 +279,7 @@ export default function EditProfilePage() {
                 <input
                   type="date"
                   value={profile.birthDate || ''}
-                  onChange={(e) => updateProfile('birthDate', e.target.value)}
+                  onChange={(e) => updateField('birthDate', e.target.value)}
                   style={{ color: '#111827' }}
                   className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-300 focus:border-transparent"
                 />
@@ -315,8 +295,8 @@ export default function EditProfilePage() {
                 </label>
                 <input
                   type="text"
-                  value={profile.location || ''}
-                  onChange={(e) => updateProfile('location', e.target.value)}
+                  value={profile.city || ''}
+                  onChange={(e) => updateField('city', e.target.value)}
                   style={{ color: '#111827' }}
                   className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-300 focus:border-transparent"
                   placeholder="Votre ville"
@@ -329,8 +309,8 @@ export default function EditProfilePage() {
                   À propos de moi
                 </label>
                 <textarea
-                  value={profile.bio || ''}
-                  onChange={(e) => updateProfile('bio', e.target.value)}
+                  value={profile.biography || ''}
+                  onChange={(e) => updateField('biography', e.target.value)}
                   style={{ color: '#111827' }}
                   className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-300 focus:border-transparent resize-none"
                   rows={4}
@@ -338,7 +318,7 @@ export default function EditProfilePage() {
                   placeholder="Parlez-nous de vous, vos passions, ce que vous recherchez..."
                 />
                 <p className="text-xs text-gray-500 mt-2">
-                  {(profile.bio || '').length}/500 caractères
+                  {(profile.biography || '').length}/500 caractères
                 </p>
               </div>
 
@@ -362,37 +342,81 @@ export default function EditProfilePage() {
           {activeTab === 'photos' && (
             <div className="bg-white rounded-2xl p-6 shadow-sm">
               <h3 className="text-lg font-semibold text-gray-800 mb-4">
-                Mes photos ({profile.images.length}/6)
+                Mes photos ({photos.length}/6)
               </h3>
               <p className="text-gray-600 text-sm mb-6">
-                Fonctionnalité photos en cours de développement
+                Ajoutez jusqu'à 6 photos. La première sera votre photo principale.
               </p>
               
+              {/* Affichage erreur upload */}
+              {uploadError && (
+                <div className="mb-4 p-3 bg-red-100 border border-red-300 rounded-lg text-red-700 text-sm">
+                  {uploadError}
+                </div>
+              )}
+              
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                {profile.images.map((image, index) => (
-                  <div key={index} className="relative group">
-                    <div className="aspect-square bg-gradient-to-br from-pink-300 to-purple-400 rounded-xl flex items-center justify-center text-4xl">
-                      📷
+                {/* Photos existantes */}
+                {photos.map((photo, index) => (
+                  <div key={photo.id} className="relative group">
+                    <div className="aspect-square rounded-xl overflow-hidden bg-gray-100">
+                      <img
+                        src={photo.url}
+                        alt={photo.altText || `Photo ${index + 1}`}
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          console.log('❌ [EditProfile] Erreur chargement image:', photo.url)
+                          e.currentTarget.src = '/images/placeholder.jpg'
+                        }}
+                      />
                     </div>
+                    
+                    {/* Badge photo principale */}
+                    {photo.estPrincipale && (
+                      <div className="absolute top-2 left-2 bg-pink-500 text-white text-xs px-2 py-1 rounded-full">
+                        ⭐ Principale
+                      </div>
+                    )}
+                    
+                    {/* Bouton suppression */}
                     <button
-                      onClick={() => removePhoto(index)}
-                      className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full text-xs hover:bg-red-600 transition-colors opacity-0 group-hover:opacity-100"
+                      onClick={() => handleDeletePhoto(photo.id)}
+                      disabled={isSaving}
+                      className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full text-xs hover:bg-red-600 transition-colors opacity-0 group-hover:opacity-100 disabled:opacity-50"
                     >
                       ✕
                     </button>
                   </div>
                 ))}
                 
-                {profile.images.length < 6 && (
+                {/* Bouton ajouter photo */}
+                {canAddPhoto() && (
                   <button
-                    onClick={addPhoto}
-                    className="aspect-square border-2 border-dashed border-pink-300 rounded-xl flex flex-col items-center justify-center text-pink-500 hover:border-pink-500 hover:text-pink-600 transition-colors"
+                    onClick={triggerFileSelect}
+                    disabled={isSaving}
+                    className="aspect-square border-2 border-dashed border-pink-300 rounded-xl flex flex-col items-center justify-center text-pink-500 hover:border-pink-500 hover:text-pink-600 transition-colors disabled:opacity-50"
                   >
                     <span className="text-3xl mb-1">+</span>
                     <span className="text-xs">Ajouter</span>
                   </button>
                 )}
               </div>
+
+              {/* Input file caché */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handlePhotoUpload}
+                className="hidden"
+              />
+
+              {/* Info limite */}
+              {!canAddPhoto() && (
+                <p className="text-amber-600 text-sm mt-4 text-center">
+                  ⚠️ Limite de 6 photos atteinte
+                </p>
+              )}
             </div>
           )}
 
@@ -443,7 +467,7 @@ export default function EditProfilePage() {
                 Détails supplémentaires
               </h3>
               <p className="text-gray-600 text-sm mb-6">
-                Ces fonctionnalités seront ajoutées prochainement
+                Ces fonctionnalités seront ajoutées dans une prochaine version
               </p>
               
               <div className="space-y-4 opacity-50">
@@ -462,7 +486,8 @@ export default function EditProfilePage() {
         <div className="mt-8 flex gap-4">
           <button
             onClick={() => router.back()}
-            className="flex-1 py-3 px-6 bg-gray-200 text-gray-700 rounded-xl font-medium hover:bg-gray-300 transition-colors"
+            disabled={isSaving}
+            className="flex-1 py-3 px-6 bg-gray-200 text-gray-700 rounded-xl font-medium hover:bg-gray-300 transition-colors disabled:opacity-50"
           >
             Annuler
           </button>
